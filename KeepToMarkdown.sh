@@ -1,94 +1,127 @@
 #!/bin/bash
-#Converts Keep Takeouts to md files
+#Converts Keep Takeouts to Anno md files
 
-### Work in progress
+#Global configuration variables
 OUT_DIR="anno"
-mkdir -p "$OUT_DIR"
+INPUT_DIR="Keep"
+ARCHIVE_PATH="_archive"
+IMAGE_PATH="_images"
+FILE_ENDING="anno.md"
 
+#extracts attachments from lines
 get_attachments() {
-  #local attachments
   local attachments
-  #echo "Got $1"
-  #declare -a attachments=("${!1}")
-  for attachment in $(echo "$1" | jq -c '.[]')
+  mkdir "$OUT_DIR/_images" 2> /dev/null
+
+
+  for i in $(echo "$1" | jq -c '.attachments | keys |.[]' 2> /dev/null )
   do
+    attachment="$(echo "$lines" | jq -r ".attachments[$i].filePath")"
     #echo "new attachment $attachment"
-    attachment="$(echo "$attachment" | jq -r '.filePath')"
-    #echo "Attach $attachment"
-    attachments="
-[$attachment]($attachment)"
+    if [ "$attachment" != "" ]
+    then
+      cp "$(dirname "$name")/$attachment" "$OUT_DIR/$IMAGE_PATH/" > /dev/null || true
+    fi
+    attachments="$attachments
+![$attachment](/image/$attachment)"
   done
   echo "$attachments"
 }
+
+#Creates a labels string
+get_labels() {
+  local lines="$1"
+  local labels
+  local color
+  color="$(echo "$lines" | jq -r '.color')"
+  labels="$color"
+  for i in $(echo "$lines" | jq -c '.annotations | keys | .[]' 2> /dev/null)
+  do
+    annotation="$(echo "$lines" | jq -c ".annotations[$i]")"
+    labels="$labels $(echo "$annotation" | jq -r '.source' )"
+  done
+  echo  "$labels" | sed 's/ /, /g'
+}
+
+#Converts a Keep file
 convert_Keep() {
   local name="$1"
-  #echo "$1"
-  #python -m json.tool < "$name"
-  local lines2
-  lines2=$(python -m json.tool < "$name")
-  #mapfile -t lines < <(cat "$name" | tr "," "\n" | tr '"' ' ')
-  #mapfile -t lines < <(cat "$name" | tr "," "\n" | tr '"' ' ')
-  #color="$(echo ${lines[0]} | sed 's/{ color : //')"
-  #color="$(echo "$lines2" | grep color | sed 's/{ color : //')"
+  local lines
+  lines=$(python -m json.tool < "$name")
+  if [ "$lines" == "" ]
+  then
+    echo "File $name without content"
+  fi
   local color
-  color="$(echo "$lines2" | jq '.color' | sed 's/\"//g')"
-  #local trashed
-  #trashed="$(echo "$lines2" | jq '.trashed')"
-  local title
-  title="${title:-$(echo "$lines2" | jq '.title' | sed 's/^"//' | sed 's/"$//' )}"
-  #title="${title:-$(echo $color&& echo $title | awk '{print $1;}')}"
-  local title="${title:-$(echo "$textContent" | awk '{print $1;}')}"
-  local timestamp
-  timestamp="$(echo "$lines2" | jq '.userEditedTimestampUsec')"
+  color="$(echo "$lines" | jq -r '.color')"
   local textContent
-  textContent="$(echo "$lines2" | jq '.textContent' | sed 's/^"//' | sed 's/"$//')"
-  #local isArchived
-  #isArchived="$(echo "$lines2" | jq '.isArchived')"
+  textContent="$(echo "$lines" | jq -r '.textContent')"
+  local timestamp
+  timestamp="$(echo "$lines" | jq -r '.userEditedTimestampUsec')"
+
+  local title
+  title="${title:-"$(echo "$lines" | jq -r '.title')"}"
+  title="${title:-"$color - $(echo $textContent | awk '{print $1 " " $2 " " $3 " " $4 " " $5;}' )" }"
+
+  local isArchived
+  isArchived="$(echo "$lines" | jq -r '.isArchived')"
   local attachments
-  attachments="$(echo "$lines2" | jq '.attachments')"
-  #echo att: "$attachments"
+  attachments="$(echo "$lines" | jq -r '.attachments')"
 
-  local title="${title:-$("$color - $(echo "$textContent" | awk '{print $1 " " $2 " " $3;}' )" ) }"
-  #title="${title:-$(echo $textContent | awk '{print $1;}')}"
+  local labels
+  labels="$(get_labels "$lines")"
 
-  #echo timestamp is $timestamp
-  #timestamp="$(date -d @$(echo $timestamp | egrep -o "[0-9]{0-10}?") +%Y-%m-%d 2>/dev/null)"
   timestamp="$(date -d @"$(echo "$timestamp" | grep -E -o "[0-9]{10}?|0$" | head -n1)" +%Y-%m-%d)"
   timestamp="${timestamp:-$(basename "$1" | grep -E -o "^.{10}")}"
   timestamp="${timestamp:-$(date -d @0 +%Y-%m-%d)}"
   timestamp="${timestamp:testi}"
   local filename="$timestamp - $title"
-  #echo is $filename
   filename=$(echo "$filename" | sed 's/\//-/g')
-  #filename=$(basename "$filename")
-  #echo is $filename
-  #filename=$(printf '%q' "$filename")
 
-  #output=$(cat << EOF
+  local outPath="$OUT_DIR"
+  if [ "$isArchived" == "true" ]
+  then
+
+    outPath="$outPath/$ARCHIVE_PATH/"
+  fi
   local output
+
+  #Create the content of the file
   output="---
 title: $title
 date: $timestamp
-labels: $color
+labels: $labels
 ---
 
 $textContent
-$(get_attachments "$attachments")
+$(get_attachments "$lines")
   "
-  #EOF
-  #)
-  echo "$OUT_DIR/$filename.md"
+  #Now output the result
+  echo "$outPath/$filename.$FILE_ENDING"
   echo "$output"
-  echo "$output" > "$OUT_DIR/$filename.anno.md"
-
+  echo "$output" > "$outPath/$filename.$FILE_ENDING"
 }
 
+check_requirements() {
+  if  ! which jq > /dev/null
+  then
+    echo "Please install jq"
+    exit 1
+  fi
+}
+
+create_output_paths() {
+  mkdir -p "$OUT_DIR"
+  mkdir -p "$OUT_DIR/$ARCHIVE_PATH"
+  mkdir -p "$OUT_DIR/$IMAGE_PATH"
+}
+
+##main
+check_requirements
+create_output_paths
 readarray -t files < <(find . -type f | grep json)
 
-#convert_Keep "${files[3]}"
-convert_Keep "Keep/Valloric_YouCompleteMe · GitHub.json"
-convert_Keep "Keep/Arbeitszeit Neujahr 2019.json"
 for file in "${files[@]}"
 do
-  convert_Keep "$file" &
+  convert_Keep "$file" #&
 done
