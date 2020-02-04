@@ -3,7 +3,6 @@
 
 #Global configuration variables
 OUT_DIR="anno"
-INPUT_DIR="Keep"
 ARCHIVE_PATH="_archive"
 IMAGE_PATH="_images"
 FILE_ENDING="anno.md"
@@ -40,7 +39,8 @@ get_labels() {
     annotation="$(echo "$lines" | jq -c ".annotations[$i]")"
     labels="$labels $(echo "$annotation" | jq -r '.source' )"
   done
-  echo  "$labels" | sed 's/ /, /g'
+  echo  "${labels// /, }"
+  # | sed 's/ /, /g'
 }
 
 #Converts a Keep file
@@ -61,7 +61,7 @@ convert_Keep() {
 
   local title
   title="${title:-"$(echo "$lines" | jq -r '.title')"}"
-  title="${title:-"$color - $(echo $textContent | awk '{print $1 " " $2 " " $3 " " $4 " " $5;}' )" }"
+  title="${title:-"$color - $(echo "$textContent" | awk '{print $1 " " $2 " " $3 " " $4 " " $5;}' )" }"
 
   local isArchived
   isArchived="$(echo "$lines" | jq -r '.isArchived')"
@@ -103,7 +103,7 @@ $(get_attachments "$lines")
 }
 
 check_requirements() {
-  if  ! which jq > /dev/null
+  if  ! command -v jq > /dev/null
   then
     echo "Please install jq"
     exit 1
