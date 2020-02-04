@@ -39,8 +39,33 @@ get_labels() {
     annotation="$(echo "$lines" | jq -c ".annotations[$i]")"
     labels="$labels $(echo "$annotation" | jq -r '.source' )"
   done
+  #now uniquify labels
+  labels="$(echo -e "${labels// /\\n}" | sort -u | xargs)"
+  #return csv of labels
   echo  "${labels// /, }"
-  # | sed 's/ /, /g'
+}
+
+get_links() {
+  local lines="$1"
+  local links
+  links=""
+  for i in $(echo "$lines" | jq -c '.annotations | keys | .[]' 2> /dev/null)
+  do
+    local title
+    local url
+    link="$(echo "$lines" | jq -c ".annotations[$i]")"
+    title="$(echo "$link" | jq -r '.title' )"
+    url="$(echo "$link" | jq -r '.url' )"
+    description="$(echo "$link" | jq -r '.description' )"
+    links="$links
+* [$title]($url)
+  $description"
+  done
+  #now uniquify labels
+  #links="$(echo -e "${links// /\\n}" | sort -u | xargs)"
+  #return csv of labels
+  #echo  "${links// /, }"
+  echo "$links"
 }
 
 #Converts a Keep file
@@ -48,6 +73,8 @@ convert_Keep() {
   local name="$1"
   local lines
   lines=$(python -m json.tool < "$name")
+  echo "$lines"
+  #exit
   if [ "$lines" == "" ]
   then
     echo "File $name without content"
@@ -56,6 +83,10 @@ convert_Keep() {
   color="$(echo "$lines" | jq -r '.color')"
   local textContent
   textContent="$(echo "$lines" | jq -r '.textContent')"
+  #textContent="${textContent//null/}"
+  textContent="$( echo "$textContent" | sed 's/^null$//' )"
+  echo "$textContent"
+  #exit
   local timestamp
   timestamp="$(echo "$lines" | jq -r '.userEditedTimestampUsec')"
 
@@ -95,6 +126,7 @@ labels: $labels
 
 $textContent
 $(get_attachments "$lines")
+$(get_links "$lines")
   "
   #Now output the result
   echo "$outPath/$filename.$FILE_ENDING"
@@ -121,6 +153,8 @@ check_requirements
 create_output_paths
 readarray -t files < <(find . -type f | grep json)
 
+convert_Keep "Keep/Bauteile.json"
+exit
 for file in "${files[@]}"
 do
   convert_Keep "$file" #&
